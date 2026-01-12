@@ -1,0 +1,88 @@
+:root {
+  --govcheck-green: #0d5302;
+}
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  background: linear-gradient(180deg, #E3FAE7 0%, #ffffff 100%);
+}
+.app {
+  max-width: 420px;
+  margin: auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+}
+.back {
+  font-size: 22px;
+  cursor: pointer;
+}
+.logo1 {
+  margin: auto;
+  height: 38px;
+}
+.logo2 {
+  margin: auto;
+  height: 48px;
+}
+.status.valid {
+  background-color: var(--#E3FAE7);
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.3);
+  border: none;
+  border-radius: 10px;
+  font-size: 22px;
+  font-weight: 700;
+  padding: 14px;
+  margin: 16px;
+  outline: 1px solid gray;
+}
+.status .icon {
+  font-size: 24px;
+  margin-right: 10px;
+}
+.fields {
+  flex: 1;
+  margin: 0 8px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.field {
+  padding: 12px;
+}
+.field:nth-child(odd) {
+  background-color: #ffffff;
+}
+.field:nth-child(even) {
+  background-color: #f2f2f2;
+}
+.title {
+  color: #555555;
+  font-size: 14px;
+}
+.value {
+  color: #000000;
+  font-size: 15px;
+  font-weight: 700; /* value en gras */
+  margin-top: 4px;
+}
+.scan-btn {
+  background-color: var(--govcheck-green);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px;
+  margin: 16px;
+  outline: 3px govcheck-green;
+}
+.scan-btn:active {
+  opacity: 0.9;
+}
+

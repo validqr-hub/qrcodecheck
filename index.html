@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Afficher données QR</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;line-height:1.4;margin:0;padding:20px;background:#f7f8fb;color:#111}
+  .container{max-width:900px;margin:0 auto;background:#fff;padding:20px;border-radius:10px;box-shadow:0 6px 24px rgba(20,30,50,0.08)}
+  h1{margin:0 0 10px;font-size:20px}
+  p.lead{margin:0 0 16px;color:#555}
+  textarea{width:100%;min-height:120px;padding:10px;border-radius:6px;border:1px solid #d7dbe0;font-family:monospace;resize:vertical}
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+  button{padding:10px 14px;border-radius:8px;border:0;background:#0b76ff;color:#fff;cursor:pointer}
+  button.secondary{background:#e6eefc;color:#0b76ff;border:1px solid #cfe3ff}
+  table{width:100%;border-collapse:collapse;margin-top:18px}
+  th,td{padding:8px 10px;border-bottom:1px solid #eef2f7;text-align:left}
+  th{background:#fafbff;font-weight:600;color:#2d3a55}
+  pre{background:#0b1220;color:#d6f0ff;padding:12px;border-radius:6px;overflow:auto}
+  .hint{margin-top:10px;color:#666;font-size:13px}
+  .badge{display:inline-block;padding:4px 8px;border-radius:999px;background:#eef6ff;color:#0b76ff;font-weight:600;font-size:12px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Afficheur de données QR</h1>
+  <p class="lead">Collez ici le contenu textuel du QR (ou ouvrez cette page via une URL contenant <span class="badge">?q=...</span>).</p>
+
+  <label for="payload">Contenu du QR (texte brut ou URL-encodé)</label>
+  <textarea id="payload" placeholder="Exemple : {&quot;nom&quot;:&quot;Dupont&quot;,&quot;tel&quot;:&quot;0612345678&quot;}"></textarea>
+
+  <div class="row">
+    <button id="showBtn">Afficher</button>
+    <button class="secondary" id="clearBtn">Effacer</button>
+    <button class="secondary" id="copyAsUrlBtn">Copier URL partageable</button>
+  </div>
+
+  <div id="resultArea"></div>
+
+  <p class="hint">Astuce : si vous générez le QR code, encodez l'URL complète vers cette page avec le paramètre <code>q</code> contenant les données URI-encodées, par ex. <code>https://votresite.tld/index.html?q=...</code>. La page détectera automatiquement <em>q</em> et affichera les données.</p>
+</div>
+
+<script>
+/* Utilitaires de parsing */
+function tryParseJSON(text){
+  try{ return JSON.parse(text); } catch(e){ return null; }
+}
+
+function parseQueryString(text){
+  // supporte both "a=1&b=2" and full URL
+  try{
+    let maybeUrl = text.trim();
+    if(maybeUrl.includes('://')) {
+      let u = new URL(maybeUrl);
+      return Object.fromEntries(u.searchParams.entries());
+    }
+    if(maybeUrl.includes('=') || maybeUrl.includes('&')){
+      return Object.fromEntries(new URLSearchParams(maybeUrl));
+    }
+  } catch(e){}
+  return null;
+}
+
+function parseKeyValueLines(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const obj = {};
+  let found=false;
+  for(const line of lines){
+    const m = line.match(/^([^:–—=]+)\s*[:=–—]\s*(.+)$/);
+    if(m){
+      obj[m[1].trim()] = m[2].trim();
+      found=true;
+    }
+  }
+  return found ? obj : null;
+}
+
+function parseVCard(text){
+  if(/BEGIN:VCARD/i.test(text)) {
+    const obj={};
+    const lines = text.split(/\r?\n/);
+    for(const line of lines){
+      const m=line.match(/^([^:;]+)(?:;[^:]*)*:(.+)$/);
+      if(m) obj[m[1].toUpperCase()] = m[2];
+    }
+    return obj;
+  }
+  return null;
+}
+
+function parseCSV(text){
+  // simple single-line "name,email,phone" or "k1,k2\nv1,v2"
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(lines.length===1 && lines[0].includes(',')) return {csv: lines[0].split(',')};
+  if(lines.length>=2){
+    const headers = lines[0].split(',').map(s=>s.trim());
+    const values = lines[1].split(',').map(s=>s.trim());
+    if(headers.length === values.length){
+      const obj = {};
+      headers.forEach((h,i)=>obj[h] = values[i]);
+      return obj;
+    }
+  }
+  return null;
+}
+
+function detectAndParse(text){
+  text = text.trim();
+  if(!text) return {raw:''};
+
+  // Try JSON
+  const j = tryParseJSON(text);
+  if(j !== null) return {type:'json',data:j};
+
+  // Try full URL that contains q=...
+  try{
+    if(text.includes('://')){
+      const u = new URL(text);
+      if(u.searchParams.has('q')){
+        const decoded = decodeURIComponent(u.searchParams.get('q'));
+        return detectAndParse(decoded); // recursively parse payload
+      }
+    }
+  }catch(e){}
+
+  // Try query string or full URL with params
+  const qs = parseQueryString(text);
+  if(qs) return {type:'querystring',data:qs};
+
+  // Try vCard
+  const v = parseVCard(text);
+  if(v) return {type:'vcard',data:v};
+
+  // Try key: value lines
+  const kv = parseKeyValueLines(text);
+  if(kv) return {type:'kv',data:kv};
+
+  // CSV
+  const csv = parseCSV(text);
+  if(csv) return {type:'csv',data:csv};
+
+  // Fallback: raw text
+  return {type:'raw',data:text};
+}
+
+/* UI rendering */
+function renderResult(parsed){
+  const out = document.getElementById('resultArea');
+  out.innerHTML = '';
+  if(!parsed || (parsed.type==='raw' && parsed.data==='')){
+    out.innerHTML = '<p style="color:#888;margin-top:12px">Aucune donnée à afficher.</p>';
+    return;
+  }
+
+  const title = document.createElement('div');
+  title.style.marginTop='14px';
+  title.innerHTML = `<strong>Format détecté :</strong> ${parsed.type || 'inconnu'}`;
+  out.appendChild(title);
+
+  if(parsed.type === 'json' || parsed.type === 'querystring' || parsed.type === 'vcard' || parsed.type === 'kv' || parsed.type === 'csv'){
+    const obj = parsed.data;
+    // Table
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    trh.innerHTML = '<th>Champ</th><th>Valeur</th>';
+    thead.appendChild(trh);
+    table.appendChild(thead);
+    const tbody = document.createElement('tbody');
+    for(const key of Object.keys(obj)){
+      const tr = document.createElement('tr');
+      const tdk = document.createElement('td');
+      tdk.textContent = key;
+      const tdv = document.createElement('td');
+      tdv.textContent = (obj[key]===null || obj[key]===undefined) ? '' : String(obj[key]);
+      tr.appendChild(tdk);
+      tr.appendChild(tdv);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    out.appendChild(table);
+
+    // Also show raw JSON pretty for copy
+    const pre = document.createElement('pre');
+    pre.style.marginTop='10px';
+    pre.textContent = JSON.stringify(obj, null, 2);
+    out.appendChild(pre);
+  } else {
+    // raw text
+    const pre = document.createElement('pre');
+    pre.textContent = parsed.data;
+    out.appendChild(pre);
+  }
+}
+
+/* Main */
+document.getElementById('showBtn').addEventListener('click', ()=>{
+  const txt = document.getElementById('payload').value.trim();
+  const parsed = detectAndParse(txt);
+  renderResult(parsed);
+});
+
+document.getElementById('clearBtn').addEventListener('click', ()=>{
+  document.getElementById('payload').value = '';
+  document.getElementById('resultArea').innerHTML = '';
+});
+
+document.getElementById('copyAsUrlBtn').addEventListener('click', ()=>{
+  const txt = document.getElementById('payload').value.trim();
+  if(!txt) { alert('Collez d’abord le contenu du QR'); return; }
+  const base = location.origin + location.pathname;
+  const url = base + '?q=' + encodeURIComponent(txt);
+  navigator.clipboard && navigator.clipboard.writeText(url).then(() => {
+    alert('URL copiée dans le presse-papiers :\n' + url);
+  }, ()=>{ prompt('Copiez cette URL', url); });
+});
+
+/* Si la page est ouverte avec ?q=... on le parse automatiquement */
+(function autoFromUrl(){
+  try{
+    const params = new URLSearchParams(location.search);
+    const q = params.get('q') || params.get('data') || params.get('payload');
+    if(q){
+      const decoded = decodeURIComponent(q);
+      document.getElementById('payload').value = decoded;
+      const parsed = detectAndParse(decoded);
+      renderResult(parsed);
+    }
+  } catch(e){}
+})();
+</script>
+</body>
+</html>
+
+
